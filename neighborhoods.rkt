@@ -5,15 +5,11 @@
 (struct hood (name coords))
 
 ;; get input files from command line arguments
-(printf "args: ~s\n"
-        (current-command-line-arguments))
-(define hoods_filename "gr_neighborhoods.txt")
-(define points_filename "sample_points.txt")
-
-;; if the line has a ":" in it then its a hood name
-(define (line-is-hood-name line)
-  (let ((strlist (string-split (string-trim line) ":")))
-    (> (length strlist) 1)))
+(unless (>= (vector-length (current-command-line-arguments)) 2)
+    (display "incorrect number of arguments")
+    (exit))
+(define hoods_filename (vector-ref (current-command-line-arguments) 0))
+(define points_filename (vector-ref (current-command-line-arguments) 1))
 
 ;; create a coord from a string in the format "[lat],[lng]"
 (define (string->coord str)
