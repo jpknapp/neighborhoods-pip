@@ -1,0 +1,99 @@
+#! /usr/bin/env racket
+#lang racket
+;; data structures: coordinate, neighborhood
+(struct coord (lat lng))
+(struct hood (name coords))
+
+;; get input files from command line arguments
+(printf "args: ~s\n"
+        (current-command-line-arguments))
+(define hoods_filename "gr_neighborhoods.txt")
+(define points_filename "sample_points.txt")
+
+;; if the line has a ":" in it then its a hood name
+(define (line-is-hood-name line)
+  (let ((strlist (string-split (string-trim line) ":")))
+    (> (length strlist) 1)))
+
+;; create a coord from a string in the format "[lat],[lng]"
+(define (string->coord str)
+  (let ((strlist (string-split (string-trim str) ",")))
+    (coord (string->number (car strlist)) (string->number (cadr strlist)))))
+
+;; read neighborhoods and their coordinates list from a file recursively, output list
+(define (read-hoods-from-file file)
+  (let ((line (read-line file)))
+    (if (or (eof-object? line) (zero? (string-length line)))
+      empty
+      (cons (hood (string-trim (string-trim line) ":") (read-coords-list file)) (read-hoods-from-file file)))))
+
+;; read coords from a file recursively until blank line or eof is encountered, output list
+(define (read-coords-list file)
+  (let ((line (read-line file)))
+    (if (or (eof-object? line) (zero? (string-length line)))
+      empty
+      (cons (string->coord line) (read-coords-list file)))))
+
+;; create list of neighborhoods
+(define hoods (call-with-input-file hoods_filename read-hoods-from-file))
+
+;; make list containing pairs of coords (segments). make sure first coord is lower lat than second
+(define (hood-coord-pairs coords)
+  (build-list (sub1 (length coords)) (lambda (i)
+                                       ;; make sure first coord is lower than second
+                                       (let ((c1 (list-ref coords i))
+                                             (c2 (list-ref coords (+ 1 i))))
+                                         (if (< (coord-lat c1) (coord-lat c2)) 
+                                             (cons c1 c2)
+                                             (cons c2 c1))))))
+
+;; nudge test point by this much if it lies on a polygon point
+(define e 0.000001)
+
+;; not-equal
+(define (neq? x y) (not (eq? x y)))
+
+;; check if given coord is within the given polygon
+;; ray-casting algorithm https://en.wikipedia.org/wiki/Point_in_polygon
+(define (coords-in-polygon? c poly)
+  (odd?
+   (for/fold ((i 0)) ((seg poly))
+     (+ i (if (ray-cross-seg? c seg) 1 0)))))
+
+;; check if a ray from the given coord crosses the given segment
+(define (ray-cross-seg? r s)
+  (let* ((Ax (coord-lng (car s))) (Ay (coord-lat (car s)))
+         (Bx (coord-lng (cdr s))) (By (coord-lat (cdr s)))
+         (Px (coord-lng r)) (Pyo (coord-lat r))
+         (Py (+ Pyo (if (or (eq? Pyo Ay)
+                            (eq? Pyo By))
+                        e 0))))
+    (cond ((or (< Py Ay) (> Py By)) #f)
+          ((> Px (max Ax Bx)) #f)
+          ((< Px (min Ax Bx)) #t)
+          (else
+           (let ((seg-AB (if (neq? Ax Bx)
+                          (/ (- By Ay) (- Bx Ax))
+                          +inf.0))
+                 (seg-AP (if (neq? Ax Px)
+                           (/ (- Py Ay) (- Px Ax))
+                           +inf.0)))
+             (if (>= seg-AP seg-AB) #t #f))))))
+
+;; kick off the process by reading points from sample file
+(call-with-input-file points_filename (lambda (file)
+                                        (let ((test-coords (read-coords-list file)))
+                                          ;; loop through sample coords
+                                          (for ((c test-coords))
+                                            (let ((match "<none>"))
+                                              ;; check every neighborhood to see if sample coord is contained within
+                                              (for ((h hoods))
+                                                ;; break out of the loop if a match is found
+                                                #:break (neq? match "<none>")
+                                                (if (coords-in-polygon? c (hood-coord-pairs (hood-coords h)))
+                                                    (set! match (hood-name h))
+                                                    empty)
+                                                )
+                                              (display match)
+                                              (newline)
+                                              )))))
