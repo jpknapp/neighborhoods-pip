@@ -11,6 +11,10 @@
 (define hoods_filename (vector-ref (current-command-line-arguments) 0))
 (define points_filename (vector-ref (current-command-line-arguments) 1))
 
+;; determine if a string is eof or empty
+(define (is-empty-str? str)
+  (or (eof-object? str) (zero? (string-length str))))
+
 ;; create a coord from a string in the format "[lat],[lng]"
 (define (string->coord str)
   (let ((strlist (string-split (string-trim str) ",")))
@@ -19,16 +23,21 @@
 ;; read neighborhoods and their coordinates list from a file recursively, output list
 (define (read-hoods-from-file file)
   (let ((line (read-line file)))
-    (if (or (eof-object? line) (zero? (string-length line)))
+    (if (is-empty-str? line)
       empty
       (cons (hood (string-trim (string-trim line) ":") (read-coords-list file)) (read-hoods-from-file file)))))
 
 ;; read coords from a file recursively until blank line or eof is encountered, output list
 (define (read-coords-list file)
-  (let ((line (read-line file)))
-    (if (or (eof-object? line) (zero? (string-length line)))
+  (let* ((line (read-line file))
+         ;; check line for : (sample points file has 'Point n:' before each point)
+         (coordstr
+          (if (and (not (is-empty-str? line)) (regexp-match ":" line))
+              (cadr (string-split line ":"))
+              line)))
+    (if (is-empty-str? coordstr)
       empty
-      (cons (string->coord line) (read-coords-list file)))))
+      (cons (string->coord coordstr) (read-coords-list file)))))
 
 ;; create list of neighborhoods
 (define hoods (call-with-input-file hoods_filename read-hoods-from-file))
@@ -80,7 +89,8 @@
 (call-with-input-file points_filename (lambda (file)
                                         (let ((test-coords (read-coords-list file)))
                                           ;; loop through sample coords
-                                          (for ((c test-coords))
+                                          (for ((c test-coords)
+                                                (i (in-range 1 (+ 1 (length test-coords)))))
                                             (let ((match "<none>"))
                                               ;; check every neighborhood to see if sample coord is contained within
                                               (for ((h hoods))
@@ -90,6 +100,7 @@
                                                     (set! match (hood-name h))
                                                     empty)
                                                 )
+                                              (printf "Point ~s: " i)
                                               (display match)
                                               (newline)
                                               )))))
